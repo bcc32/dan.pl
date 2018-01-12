@@ -91,7 +91,7 @@ sub main {
     'verbose|v+',
   ) or pod2usage(2);
 
-  say encode_json(\@_) if $verbose >= $DEBUG;
+  say 'ARGV: ', encode_json(\@_) if show_debug();
 
   # chdir to output directory
   make_path($output_dir);
@@ -107,6 +107,7 @@ sub do_post {
 
   for my $id (@ids) {
     try {
+      say "downloading post $id" if show_progress();
       my $info = get_post_info($id);
       my $filename = "$info->{md5}.$info->{file_ext}";
       download_file($info->{file_url} => $filename);
@@ -119,6 +120,8 @@ sub do_post {
 sub get_post_info {
   my ($id) = @_;
 
+  say "getting post info for post $id" if show_debug();
+
   my $url = build_url("/posts/$id.json");
   my $resp = $http->get($url);
   assert_request_success($resp);
@@ -129,8 +132,12 @@ sub get_post_info {
 sub download_file {
   my ($file_url, $filename) = @_;
 
+  say "downloading $file_url => $filename..." if show_progress();
+
   my $resp = $http->mirror(build_url($file_url), $filename);
   assert_request_success($resp);
+
+  say 'done!' if show_progress();
 }
 
 sub build_url {
@@ -144,5 +151,16 @@ sub build_url {
 sub assert_request_success {
   my ($resp) = @_;
 
-  confess "$resp->{status} $resp->{reason}" unless $resp->{success};
+  unless ($resp->{success}) {
+    say encode_json($resp) if show_debug();
+    confess "$resp->{status} $resp->{reason}";
+  }
+}
+
+sub show_progress {
+  $verbose >= $PROGRESS;
+}
+
+sub show_debug {
+  $verbose >= $DEBUG;
 }
