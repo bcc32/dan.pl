@@ -203,7 +203,13 @@ sub get_post_info {
   my $resp = $http->get($url);
   assert_request_success($resp);
 
-  return decode_json($resp->{content});
+  my $info = decode_json($resp->{content});
+
+  # file_url might be missing if the user is not authorized to view a certain
+  # post, e.g., deleted posts or restricted tags
+  die "no file URL for post $id" unless $info->{file_url};
+
+  $info;
 }
 
 sub get_pool_info {
