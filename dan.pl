@@ -95,7 +95,7 @@ sub main {
     'md5',
   ) or pod2usage(2);
 
-  say 'ARGV: ', encode_json(\@_) if show_debug();
+  _debug('ARGV', \@_);
 
   # chdir to output directory
   make_path($output_dir);
@@ -111,7 +111,7 @@ sub do_post {
 
   for my $id (@ids) {
     try {
-      say "downloading post $id" if show_progress();
+      _progress('post %d', $id);
       my $info = get_post_info($id);
       my $filename = "$info->{md5}.$info->{file_ext}";
       download_file($info->{file_url} => $filename);
@@ -124,7 +124,7 @@ sub do_post {
 sub do_pool {
   my ($id) = @_;
 
-  say "downloading pool $id" if show_progress();
+  _progress('pool %d', $id);
 
   my $info = get_pool_info($id);
   my @post_ids = split / /, $info->{post_ids};
@@ -141,7 +141,7 @@ sub do_pool {
 
   for my $id (@post_ids) {
     try {
-      say "downloading post $id" if show_progress();
+      _progress('post %d', $id);
       my $info = get_post_info($id);
       my $filename = $build_basename->($info) . ".$info->{file_ext}";
       download_file($info->{file_url} => $filename);
@@ -164,7 +164,7 @@ sub do_tags {
 
   {
     local $, = ' ';
-    say "searching for posts with tags @tags" if show_progress();
+    _progress('search %s', join(' ', @tags));
   };
 
   my $params = $http->www_form_urlencode({ tags => join '+', @tags });
@@ -184,7 +184,7 @@ sub do_tags {
     my $post_infos = decode_json($resp->{content});
     for my $info (@$post_infos) {
       try {
-        say "downloading post $info->{id}" if show_progress();
+        _progress('post %d', $info->{id});
         my $filename = "$info->{md5}.$info->{file_ext}";
         download_file($info->{file_url} => $filename);
       } catch {
@@ -197,7 +197,7 @@ sub do_tags {
 sub get_post_info {
   my ($id) = @_;
 
-  say "getting post info for post $id" if show_debug();
+  _debug('get_post_info', $id);
 
   my $url = build_url("/posts/$id.json");
   my $resp = $http->get($url);
@@ -209,7 +209,7 @@ sub get_post_info {
 sub get_pool_info {
   my ($id) = @_;
 
-  say "getting pool info for pool $id" if show_debug();
+  _debug('get_pool_info', $id);
 
   my $url = build_url("/pools/$id.json");
   my $resp = $http->get($url);
@@ -221,7 +221,7 @@ sub get_pool_info {
 sub get_post_count {
   my ($params) = @_;
 
-  say "getting post count for query $params" if show_debug();
+  _debug('get_post_count', $params);
 
   my $url = build_url("/counts/posts.json?$params");
   my $resp = $http->get($url);
@@ -233,12 +233,12 @@ sub get_post_count {
 sub download_file {
   my ($file_url, $filename) = @_;
 
-  say "downloading $file_url => $filename..." if show_progress();
+  _progress('download %s => %s', $file_url, $filename);
 
   my $resp = $http->mirror(build_url($file_url), $filename);
   assert_request_success($resp);
 
-  say 'done!' if show_progress();
+  _progress('done');
 }
 
 sub build_url {
@@ -253,15 +253,21 @@ sub assert_request_success {
   my ($resp) = @_;
 
   unless ($resp->{success}) {
-    say encode_json($resp) if show_debug();
+    _debug('request failed', $resp);
     confess "$resp->{status} $resp->{reason}";
   }
 }
 
-sub show_progress {
-  $verbose >= $PROGRESS;
+sub _progress {
+  return unless $verbose >= $PROGRESS;
+  my ($fmt, @data) = @_;
+
+  printf "$fmt\n", @data;
 }
 
-sub show_debug {
-  $verbose >= $DEBUG;
+sub _debug {
+  return unless $verbose >= $DEBUG;
+  my ($label, @data) = @_;
+
+  say "$label: ", encode_json(\@data);
 }
