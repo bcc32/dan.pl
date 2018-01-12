@@ -89,6 +89,7 @@ sub main {
   GetOptionsFromArray(\@_, \%opts,
     'output-dir|d=s',
     'verbose|v+',
+    'md5',
   ) or pod2usage(2);
 
   say 'ARGV: ', encode_json(\@_) if show_debug();
@@ -117,12 +118,82 @@ sub do_post {
   }
 }
 
+sub do_pool {
+  my ($id) = @_;
+
+  say "downloading pool $id" if show_progress();
+
+  my $info = get_pool_info($id);
+  my @post_ids = split / /, $info->{post_ids};
+
+  # sub for determining filename
+  my $build_basename;
+  my $index = 0;
+  if ($opts{md5}) {
+    $build_basename = sub { $_[0]->{md5} };
+  } else {
+    my $width = length($#post_ids);  # zero-indexed, so we only go up to n-1
+    $build_basename = sub { pad_number($width, $index) };
+  }
+
+  for my $id (@post_ids) {
+    try {
+      say "downloading post $id" if show_progress();
+      my $info = get_post_info($id);
+      my $filename = $build_basename->($info) . ".$info->{file_ext}";
+      download_file($info->{file_url} => $filename);
+    } catch {
+      warn "error downloading post $id, $_";
+    };
+
+    $index++;
+  }
+}
+
+sub pad_number {
+  my ($width, $n) = @_;
+
+  sprintf "%0${width}d", $n;
+}
+
+sub do_tags {
+  my (@tags) = @_;
+
+  {
+    local $, = ' ';
+    say "searching for posts with tags @tags" if show_progress();
+  };
+
+  my $params = $http->www_form_urlencode({ tags => join '+', @tags });
+  my $url = build_url("/posts.json?$params");
+  my $resp = $http->get($url);
+  assert_request_success($resp);
+
+  say $url if show_debug();
+
+  # TODO multiple pages
+
+  ...
+}
+
 sub get_post_info {
   my ($id) = @_;
 
   say "getting post info for post $id" if show_debug();
 
   my $url = build_url("/posts/$id.json");
+  my $resp = $http->get($url);
+  assert_request_success($resp);
+
+  return decode_json($resp->{content});
+}
+
+sub get_pool_info {
+  my ($id) = @_;
+
+  say "getting pool info for pool $id" if show_debug();
+
+  my $url = build_url("/pools/$id.json");
   my $resp = $http->get($url);
   assert_request_success($resp);
 
