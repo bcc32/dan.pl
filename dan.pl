@@ -52,6 +52,7 @@ use Getopt::Long qw(GetOptionsFromArray :config auto_help gnu_getopt);
 use HTTP::Tiny;
 use JSON;
 use Pod::Usage;
+use POSIX qw(ceil);
 use Readonly;
 use Try::Tiny;
 
@@ -66,6 +67,8 @@ Readonly my %MODES => (
 
 Readonly my $PROGRESS => 1;
 Readonly my $DEBUG    => 2;
+
+Readonly my $POSTS_PER_PAGE => 20;
 
 my $auth = $ENV{DANBOORU_AUTH};
 my $http;
@@ -165,15 +168,30 @@ sub do_tags {
   };
 
   my $params = $http->www_form_urlencode({ tags => join '+', @tags });
-  my $url = build_url("/posts.json?$params");
-  my $resp = $http->get($url);
-  assert_request_success($resp);
+  my $count = get_post_count($params);
+  my $num_pages = ceil($count / $POSTS_PER_PAGE);
 
-  say $url if show_debug();
+  for my $page (1..$num_pages) {
+    my $params = $http->www_form_urlencode({
+      tags => join('+', @tags),
+      page => $page,
+      limit => $POSTS_PER_PAGE,
+    });
+    my $url = build_url("/posts.json?$params");
+    my $resp = $http->get($url);
+    assert_request_success($resp);
 
-  # TODO multiple pages
-
-  ...
+    my $post_infos = decode_json($resp->{content});
+    for my $info (@$post_infos) {
+      try {
+        say "downloading post $info->{id}" if show_progress();
+        my $filename = "$info->{md5}.$info->{file_ext}";
+        download_file($info->{file_url} => $filename);
+      } catch {
+        warn "error downloading post $info->{id}, $_";
+      };
+    }
+  }
 }
 
 sub get_post_info {
@@ -198,6 +216,18 @@ sub get_pool_info {
   assert_request_success($resp);
 
   return decode_json($resp->{content});
+}
+
+sub get_post_count {
+  my ($params) = @_;
+
+  say "getting post count for query $params" if show_debug();
+
+  my $url = build_url("/counts/posts.json?$params");
+  my $resp = $http->get($url);
+  assert_request_success($resp);
+
+  return decode_json($resp->{content})->{counts}{posts};
 }
 
 sub download_file {
